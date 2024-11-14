@@ -347,9 +347,9 @@ int main(int argc, char* argv[])
     #ifdef _WIN32
     ch = '\\';
     #endif // _WIN32
-    #if defined(__APPLE__) || defined(__linux)
+    #ifdef __unix__
     ch = '/';
-    #endif // __linux
+    #endif // __unix__
     if (strchr(parameters.rd_file, ch) != NULL)
     {
       cwd[0] = 0;

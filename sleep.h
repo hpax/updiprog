@@ -7,9 +7,9 @@
 #include <windows.h>
 #include <unistd.h>
 #endif // _WIN32
-#if defined(__APPLE__) || defined(__linux)
+#ifdef __unix__
 #include <unistd.h>
-#endif // __linux
+#endif // __unix__
 
 void msleep(uint32_t usec);
 
