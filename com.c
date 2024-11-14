@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #endif
 #include <stdio.h>
 #include <stdint.h>
@@ -68,6 +69,7 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
   timeouts.WriteTotalTimeoutConstant = 1;
   SetCommTimeouts(hSerial, &timeouts);
   //COM_Bytes = 0;
+  return true;
   #endif
 
   #ifdef __unix__
@@ -115,13 +117,25 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
   else
     SerialPortSettings.c_cflag &= ~CSTOPB;  /* CSTOPB = 2 Stop bits,here it is cleared so 1 Stop bit */
   SerialPortSettings.c_cflag |= (CREAD | CLOCAL); /* Enable receiver,Ignore Modem Control lines       */
+#ifdef CRTSCTS
+  SerialPortSettings.c_cflag &= ~CRTSCTS; /* Disable flow control */
+#endif
   SerialPortSettings.c_cc[VMIN]  = 0;            // read doesn't block
   SerialPortSettings.c_cc[VTIME] = 5;            // 0.1 seconds read timeout
   tcsetattr(fd, TCSANOW, &SerialPortSettings);  /* Set the attributes to the termios structure*/
+
+#ifdef TIOCMSET
+  {
+      const int modem_bits = TIOCM_DTR;
+      ioctl(fd, TIOCMBIC, &modem_bits); /* Clear modem signals */
+  }
+#endif
   tcflush(fd, TCIFLUSH);
-  #endif
 
   return true;
+#endif // __unix__
+
+  return false;			// No serial port definition known
 }
 
 /** \brief Write data to COM port
