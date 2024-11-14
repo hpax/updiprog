@@ -344,9 +344,9 @@ int main(int argc, char* argv[])
 
     if (getcwd(cwd, sizeof(cwd)) == NULL)
       cwd[0] = 0;
-    #ifdef __MINGW32__
+    #ifdef _WIN32
     ch = '\\';
-    #endif // __MINGW32__
+    #endif // _WIN32
     #if defined(__APPLE__) || defined(__linux)
     ch = '/';
     #endif // __linux

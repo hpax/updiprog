@@ -3,10 +3,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#ifdef __MINGW32__
+#ifdef _WIN32
 #include <windows.h>
 #include <unistd.h>
-#endif // __MINGW32__
+#endif // _WIN32
 #if defined(__APPLE__) || defined(__linux)
 #include <unistd.h>
 #endif // __linux

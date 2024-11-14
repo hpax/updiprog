@@ -1,4 +1,4 @@
-#ifdef __MINGW32__
+#ifdef _WIN32
 #include <windows.h>
 #include <winbase.h>
 #endif
@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <math.h>
 
-#ifdef __MINGW32__
+#ifdef _WIN32
 static HANDLE hSerial;
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__linux)
@@ -35,7 +35,7 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
 {
   printf("Opening %s at %u baud\n", port, baudrate);
   COM_Baudrate = baudrate;
-  #ifdef __MINGW32__
+  #ifdef _WIN32
   char str[64];
   uint8_t multiplier;
 
@@ -133,7 +133,7 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
  */
 int COM_Write(uint8_t *data, uint16_t len)
 {
-  #ifdef __MINGW32__
+  #ifdef _WIN32
   DWORD dwBytesWritten = 0;
   //DWORD signal;
   //OVERLAPPED ov = { 0 };
@@ -170,7 +170,7 @@ int COM_Write(uint8_t *data, uint16_t len)
  */
 int COM_Read(uint8_t *data, uint16_t len)
 {
-  #ifdef __MINGW32__
+  #ifdef _WIN32
   //OVERLAPPED ov = { 0 };
   //COMSTAT status;
   //DWORD errors;
@@ -216,7 +216,7 @@ uint16_t COM_GetTransTime(uint16_t len)
   return (uint16_t)(len * 1000 * 11 / COM_Baudrate + 1);
 }
 
-#ifdef __MINGW32__
+#ifdef _WIN32
 void COM_WaitForTransmit(void)
 {
   COMSTAT rStat;
@@ -225,7 +225,7 @@ void COM_WaitForTransmit(void)
     ClearCommError(hSerial, &nErr, &rStat);
   } while (rStat.cbOutQue > 0);
 }
-#endif // __MINGW32__
+#endif // _WIN32
 
 /** \brief Close current COM port
  *
@@ -235,7 +235,7 @@ void COM_WaitForTransmit(void)
 void COM_Close(void)
 {
   printf("Closing COM port\n");
-  #ifdef __MINGW32__
+  #ifdef _WIN32
   CloseHandle(hSerial);
   #endif
   #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__linux)
