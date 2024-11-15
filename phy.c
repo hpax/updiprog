@@ -1,10 +1,14 @@
+#include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 #include "com.h"
 #include "log.h"
 #include "phy.h"
 #include "updi.h"
 #include "sleep.h"
 #include "com.h"
+
+static struct com_params phy_com;
 
 /** \brief Initialize physical interface
  *
@@ -16,7 +20,10 @@
  */
 bool PHY_Init(const struct com_params *com)
 {
-  return COM_Open(com);
+  phy_com = *com;
+  phy_com.two_stopbits = true;
+  phy_com.have_parity  = true;
+  return COM_Open(&phy_com);
 }
 
 /** \brief Sends a double break to reset the UPDI port
@@ -28,9 +35,15 @@ bool PHY_Init(const struct com_params *com)
  * \return true if success
  *
  */
-bool PHY_DoBreak(const struct com_params *com)
+bool PHY_DoBreak(void)
 {
+  struct com_params break_com;
   uint8_t buf[] = {UPDI_BREAK, UPDI_BREAK};
+
+  break_com = phy_com;
+  break_com.baudrate     = 300;
+  break_com.two_stopbits = false;
+  break_com.have_parity  = false;
 
   LOG_Print(LOG_LEVEL_INFO, "Sending double break");
 
@@ -38,11 +51,7 @@ bool PHY_DoBreak(const struct com_params *com)
   // At 300 bauds, the break character will pull the line low for 30ms
   // Which is slightly above the recommended 24.6ms
   // no parity, one stop bit
-  struct com_params slow_com = *com;
-  slow_com.baudrate = 300;
-  slow_com.two_stopbits = false;
-  slow_com.have_parity = false;
-  if (COM_Config(&slow_com) != true)
+  if (!COM_Config(&break_com))
     return false;
   // Send two break characters, with 1 stop bit in between
   COM_Write(buf, sizeof(buf));
@@ -52,7 +61,7 @@ bool PHY_DoBreak(const struct com_params *com)
     LOG_Print(LOG_LEVEL_WARNING, "No answer received");
 
   // Restore previous configuration and exit
-  return !COM_Config(com);
+  return COM_Config(&phy_com);
 }
 
 /** \brief Send data to physical interface
@@ -64,21 +73,12 @@ bool PHY_DoBreak(const struct com_params *com)
  */
 bool PHY_Send(uint8_t *data, uint8_t len)
 {
-  //uint8_t i;
-
-  /*for (i = 0; i < len; i++)
-  {
-    COM_Write(&data[i], 1);
-  }*/
-  COM_Write(data, len);
-  // read echo
-  //usleep(10);
-  //msleep(COM_GetTransTime(len));
-  //Sleep(10);
-
-  COM_Read(data, len);
-
-  return true;
+  int rv1, rv2;
+  rv1 = COM_Write(data, len);
+  if (rv1 < 0)
+    return false;
+  rv2 = COM_Read(data, rv1);	/* Read echo due to half duplex */
+  return rv1 == len && rv2 == len;
 }
 
 /** \brief Receive data from physical interface to data buffer
@@ -90,10 +90,8 @@ bool PHY_Send(uint8_t *data, uint8_t len)
  */
 bool PHY_Receive(uint8_t *data, uint16_t len)
 {
-  int val = COM_Read(data, len);
-  if ((val < 0) || (val != len))
-    return false;
-  return true;
+  memset(data, 0, len);		/* This is not checked in too many places */
+  return COM_Read(data, len) == len;
 }
 
 /** \brief Close physical interface
@@ -103,5 +101,6 @@ bool PHY_Receive(uint8_t *data, uint16_t len)
  */
 void PHY_Close(void)
 {
+  printf("PHY_Close\n");
   COM_Close();
 }

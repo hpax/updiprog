@@ -86,16 +86,17 @@ bool LINK_Init(const struct com_params *com)
   //Create a UPDI physical connection
   if (PHY_Init(com) == false)
     return false;
-  byte = UPDI_BREAK;
-  PHY_Send(&byte, sizeof(uint8_t));
   while (err-- > 0)
   {
+    byte = UPDI_BREAK;
+    PHY_Send(&byte, sizeof(uint8_t));
+
     LINK_Start();
     //Check answer
     if (LINK_Check() == true)
       return true;
     //Send double break if all is not well, and re-check
-    if (PHY_DoBreak(com) == false)
+    if (!PHY_DoBreak())
     {
       LOG_Print(LOG_LEVEL_ERROR, "UPDI initialisation failed");
       return false;

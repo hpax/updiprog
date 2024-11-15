@@ -63,7 +63,7 @@ bool COM_Config(const struct com_params *params)
 
 #elif defined(__unix__)
 
-#define _BSD_SOURCE		/* For CRTSCTS */
+#define _BSD_SOURCE		/* For CRTSCTS, CMSPAR */
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -73,10 +73,6 @@ bool COM_Config(const struct com_params *params)
 #include <asm/termbits.h>
 #else
 #include <termios.h>
-#endif
-
-#ifndef BOTHER
-#define BOTHER B0		/* Non-fixed baud rates not supported */
 #endif
 
 /* If these are not supported on this platform, just skip them */
@@ -111,7 +107,11 @@ static speed_t termios_convert_speed(uint32_t baudrate)
 #define SPEED(b,n) case n : speed = b; break;
 #include "termios_speeds.h"
 #undef SPEED
+#ifdef BOTHER
     default : speed = BOTHER; break;
+#else
+    default : speed = B0; break; /* Error */
+#endif
     }
   }
   return speed;
@@ -141,22 +141,18 @@ static int tcsetattr(int fd, int optional_actions,
 {
   return ioctl(fd, optional_actions, termios_p);
 }
-static int cfsetbaud(struct termios *termios_p, unsigned long baudrate)
+static bool cfsetbaud(struct termios *termios_p, unsigned long baudrate)
 {
   speed_t speed = termios_convert_speed(baudrate);
   termios_p->c_ispeed = termios_p->c_ospeed = baudrate;
-  if (speed == B0)
-    speed = BOTHER;
-  termios_p->c_cflag &= CBAUD | CIBAUD;
+  termios_p->c_cflag &= ~(CBAUD | (CBAUD << IBSHIFT));
   termios_p->c_cflag |= speed | (speed << IBSHIFT);
-  return 0;
-}
-static int tcflush(int fd, int arg)
-{
-  return ioctl(fd, TCFLSH, arg);
+
+  /* Fail on overflow */
+  return termios_p->c_ospeed != baudrate;
 }
 #else
-static int cfsetbaud(struct termios *termios_p, unsigned long baudrate)
+static bool cfsetbaud(struct termios *termios_p, unsigned long baudrate)
 {
   speed_t speed = termios_convert_speed(baudrate);
   return baudrate != B0 &&
@@ -199,7 +195,6 @@ bool COM_Config(const struct com_params *params)
   /* Setting the Baud rate */
   if (cfsetbaud(&SerialPortSettings, params->baudrate))
     return false;
-
   /*
    * Disable output processing
    */
@@ -211,25 +206,27 @@ bool COM_Config(const struct com_params *params)
   SerialPortSettings.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
 
   /*
-   * Disable input processing
+   * Disable input processing, disable XON/XOFF processing
    */
   SerialPortSettings.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | PARMRK |
 				  ISTRIP | INLCR | IGNCR | ICRNL |
 				  IXON | IXOFF);
   /*
-   * Disable parity, 1 stop bit, enable receiver, ignore modem signals,
-   * disable RTS/CTS signalling, disable XON/XOFF, disable parity checking
-   * and all character conversions.
+   * Disable parity, 1/2 stop bit, enable receiver, ignore modem signals,
+   * disable RTS/CTS signalling, disable all character conversions.
    */
-  SerialPortSettings.c_cflag &= ~(CSIZE | HUPCL | PARENB | CSTOPB | CRTSCTS);
+  SerialPortSettings.c_cflag &= ~(CSIZE | HUPCL | PARENB | PARODD | CMSPAR |
+				  CSTOPB | LOBLK | CRTSCTS);
   SerialPortSettings.c_cflag |= CREAD | CLOCAL | CS8;
-  if (params->have_parity)
+  if (params->have_parity) {
+    SerialPortSettings.c_iflag |= INPCK;    /* Check parity */
     SerialPortSettings.c_cflag |= PARENB;   /* Enable parity */
+  }
   if (params->two_stopbits)
     SerialPortSettings.c_cflag |= CSTOPB;   /* CSTOPB = 2 Stop bits */
 
-  SerialPortSettings.c_cc[VMIN]  = 0;	// read doesn't block
-  SerialPortSettings.c_cc[VTIME] = 1;	// 0.1 seconds read timeout
+  SerialPortSettings.c_cc[VMIN]  = 0;	// Don't block more than VTIME total
+  SerialPortSettings.c_cc[VTIME] = 5;	// 0.5 seconds read timeout
   tcsetattr(fd, TCSAFLUSH, &SerialPortSettings);  /* Set the attributes to the termios structure*/
   set_modem_bits(fd, params->dtr, params->rts);
 
@@ -275,12 +272,12 @@ bool COM_Open(const struct com_params *params)
  *
  * \param [in] data Data buffer for writing
  * \param [in] len Length of data buffer
- * \return 0 if everything Ok
+ * \return number of bytes written as int
  *
  */
 int COM_Write(const uint8_t *data, uint16_t len)
 {
-    return write(fd, data, len) >= 0;
+  return write(fd, data, len);
 }
 
 /** \brief Read data from COM port

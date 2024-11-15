@@ -281,7 +281,7 @@ bool NVM_WriteFuse(uint8_t fusenum, uint8_t value)
  * \return true if succeed
  *
  */
-bool NVM_LoadIhex(char *filename, uint16_t address, uint16_t len)
+bool NVM_LoadIhex(const char *filename, uint16_t address, uint16_t len)
 {
   uint8_t *fdata;
   uint8_t errCode;
@@ -335,7 +335,7 @@ bool NVM_LoadIhex(char *filename, uint16_t address, uint16_t len)
  * \return true if succeed
  *
  */
-bool NVM_SaveIhex(char *filename, uint16_t address, uint16_t len)
+bool NVM_SaveIhex(const char *filename, uint16_t address, uint16_t len)
 {
   uint8_t *fdata;
   FILE *fp;

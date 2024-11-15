@@ -107,7 +107,8 @@ int main(int argc, char* argv[])
   }
 
   memset(&parameters, 0, sizeof(tParam));
-  parameters.com.baudrate = PHY_BAUDRATE;
+  parameters.com.baudrate     = PHY_BAUDRATE;
+  parameters.com.two_stopbits = true;
   parameters.device = -1;
 
   i = 1;

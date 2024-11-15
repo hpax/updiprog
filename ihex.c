@@ -46,7 +46,7 @@ bool IHEX_WriteEnd(FILE *fp)
  * \return error code as uint8_t
  *
  */
-uint8_t IHEX_WriteFile(FILE *fp, uint8_t *data, uint16_t len)
+uint8_t IHEX_WriteFile(FILE *fp, const uint8_t *data, uint16_t len)
 {
   uint16_t i;
   uint8_t x;
