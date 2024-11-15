@@ -4,6 +4,7 @@
 #include "phy.h"
 #include "updi.h"
 #include "sleep.h"
+#include "com.h"
 
 /** \brief Initialize physical interface
  *
@@ -13,9 +14,9 @@
  * \return true if success
  *
  */
-bool PHY_Init(char *port, uint32_t baudrate, bool onDTR)
+bool PHY_Init(const struct com_params *com)
 {
-  return COM_Open(port, baudrate, true, true);
+  return COM_Open(com);
 }
 
 /** \brief Sends a double break to reset the UPDI port
@@ -27,17 +28,21 @@ bool PHY_Init(char *port, uint32_t baudrate, bool onDTR)
  * \return true if success
  *
  */
-bool PHY_DoBreak(char *port)
+bool PHY_DoBreak(const struct com_params *com)
 {
   uint8_t buf[] = {UPDI_BREAK, UPDI_BREAK};
 
   LOG_Print(LOG_LEVEL_INFO, "Sending double break");
-  COM_Close();
+
   // Re-init at a lower baudrate
   // At 300 bauds, the break character will pull the line low for 30ms
   // Which is slightly above the recommended 24.6ms
   // no parity, one stop bit
-  if (COM_Open(port, 300, false, false) != true)
+  struct com_params slow_com = *com;
+  slow_com.baudrate = 300;
+  slow_com.two_stopbits = false;
+  slow_com.have_parity = false;
+  if (COM_Config(&slow_com) != true)
     return false;
   // Send two break characters, with 1 stop bit in between
   COM_Write(buf, sizeof(buf));
@@ -46,9 +51,8 @@ bool PHY_DoBreak(char *port)
   if (COM_Read(buf, 2) != 2)
     LOG_Print(LOG_LEVEL_WARNING, "No answer received");
 
-  COM_Close();
-
-  return true;
+  // Restore previous configuration and exit
+  return !COM_Config(com);
 }
 
 /** \brief Send data to physical interface

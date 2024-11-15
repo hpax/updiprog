@@ -15,8 +15,8 @@
 #include "log.h"
 #include "nvm.h"
 #include "phy.h"
+#include "com.h"
 
-#define FILENAME_LEN    (64)
 #define COMPORT_LEN     (32)
 #define FUSES_LEN       (128)
 
@@ -33,11 +33,10 @@ typedef struct
   bool      lock;
   bool      unlock;
   bool      show_info;
-  uint32_t  baudrate;
   int8_t    device;
-  char      port[COMPORT_LEN];
-  char      wr_file[FILENAME_LEN];
-  char      rd_file[FILENAME_LEN];
+  struct com_params com;
+  const char *wr_file;
+  const char *rd_file;
   char      fuses[FUSES_LEN];
 } tParam;
 
@@ -55,6 +54,8 @@ void help(void)
   printf("  -b BAUDRATE - set COM baudrate (default=115200)\n");
   printf("  -d DEVICE   - target device (tinyXXX)\n");
   printf("  -c COM_PORT - COM port to use (Win: COMx | *nix: /dev/ttyX)\n");
+  printf("  -D          - assert (low) DTR# on COM port\n");
+  printf("  -R          - assert (low) RTS# on COM port\n");
   printf("  -e          - erase device\n");
   printf("  -fw X:0xYY  - write fuses (X - fuse number, 0xYY - hex value)\n");
   printf("  -fr         - read all fuses\n");
@@ -63,7 +64,6 @@ void help(void)
   printf("  -h          - show this help screen\n");
   printf("  -mX         - set logging level (0-all/1-warnings/2-errors)\n");
   printf("  -r FILE.HEX - Hex file to read MCU flash into\n");
-  //printf("  -p          - use DTR line to power device\n");
   printf("  -w FILE.HEX - Hex file to write to MCU flash\n");
   printf("\n");
   printf("  List of supported devices:\n    ");
@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
   }
 
   memset(&parameters, 0, sizeof(tParam));
-  parameters.baudrate = PHY_BAUDRATE;
+  parameters.com.baudrate = PHY_BAUDRATE;
   parameters.device = -1;
 
   i = 1;
@@ -123,7 +123,7 @@ int main(int argc, char* argv[])
           if ((i < (argc - 1)) && (argv[i + 1][0] != '-'))
           {
             if (sscanf(argv[i + 1], "%u", &tVal) == 1)
-              parameters.baudrate = tVal;
+              parameters.com.baudrate = tVal;
             else
               printf("Baudrate parameter is wrong!\n");
           }
@@ -132,13 +132,20 @@ int main(int argc, char* argv[])
           /**< set COM-port */
           if ((i < (argc - 1)) && (argv[i + 1][0] != '-'))
           {
-            strncpy(parameters.port, argv[i + 1], COMPORT_LEN);
-            parameters.port[COMPORT_LEN - 1] = 0;
+	    parameters.com.port = argv[i + 1];
           } else
           {
             printf("COM-port name is missing!\n");
           }
           break;
+        case 'D':
+	  /**< assert DTR# */
+	  parameters.com.dtr = true;
+	  break;
+        case 'R':
+	  /**< assert RTS# */
+	  parameters.com.rts = true;
+	  break;
         case 'd':
           /**< set device id */
           if ((i < (argc - 1)) && (argv[i + 1][0] != '-'))
@@ -204,8 +211,7 @@ int main(int argc, char* argv[])
           /**< read from flash to HEX file */
           if ((i < (argc - 1)) && (argv[i + 1][0] != '-'))
           {
-            strncpy(parameters.rd_file, argv[i + 1], FILENAME_LEN);
-            parameters.rd_file[FILENAME_LEN - 1] = 0;
+	    parameters.rd_file = argv[i+1];
             parameters.read = true;
             i++;
           } else
@@ -238,8 +244,7 @@ int main(int argc, char* argv[])
           /**< write to flash from HEX file */
           if ((i < (argc - 1)) && (argv[i + 1][0] != '-'))
           {
-            strncpy(parameters.wr_file, argv[i + 1], FILENAME_LEN);
-            parameters.wr_file[FILENAME_LEN - 1] = 0;
+	    parameters.wr_file = argv[i+1];
             parameters.write = true;
             i++;
           } else
@@ -263,7 +268,7 @@ int main(int argc, char* argv[])
     printf("Device type (-d) is not set!\n");
     return -1;
   }
-  if (strlen(parameters.port) == 0)
+  if (!parameters.com.port)
   {
     printf("COM port name is missing!\n");
     return -1;
@@ -275,9 +280,9 @@ int main(int argc, char* argv[])
     return -1;
   }
 
-  if (LINK_Init(parameters.port, parameters.baudrate, false) == false)
+  if (LINK_Init(&parameters.com) == false)
   {
-    printf("Can't open port: %s\nPlease check connection and try again.\n", parameters.port);
+    printf("Can't open port: %s\nPlease check connection and try again.\n", parameters.com.port);
     return -1;
   }
 

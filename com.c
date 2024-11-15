@@ -11,45 +11,38 @@ static uint32_t COM_Baudrate = 115200;
 #include <windows.h>
 #include <winbase.h>
 
-/** \brief Open COM port with settings
+static HANDLE hSerial;
+
+/** \brief Configure a serial port
  *
- * \param [in] port Port name as string
- * \param [in] baudrate Port baudrate
- * \param [in] have_parity true if parity should be switched on
- * \param [in] two_stopbits true if 2 stop bits used
+ * \param [in] param Desired serial port parameters
  * \return true if succeed
  *
  */
-bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits)
+bool COM_Config(const struct com_params *params)
 {
-  printf("Opening %s at %u baud\n", port, baudrate);
-  char str[64];
-  HANDLE hSerial;
-
-  snprintf(str, sizeof str, "\\\\.\\%s", port);
-  hSerial = CreateFile(str, GENERIC_READ | GENERIC_WRITE, 0,
-                              NULL, OPEN_EXISTING, 0, NULL);
-  if (hSerial == INVALID_HANDLE_VALUE)
-    return false;
-  fd = _open_osfhandle((intptr_t)hSerial, 0);
-  if (fd < 0)
-      return false;
-
   DCB dcbSerialParams = { 0 }; // Initializing DCB structure
+  DWORD wait_events = EV_TXEMPTY;
+
+  /* Wait for output to drain */
+  WaitCommEvent(hSerial, &wait_events, NULL);
+
   dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
   GetCommState(hSerial, &dcbSerialParams);
-  dcbSerialParams.BaudRate        = baudrate;  // Setting BaudRate
+  dcbSerialParams.BaudRate        = params->baudrate;  // Setting BaudRate
   dcbSerialParams.fBinary         = TRUE;
-  dcbSerialParams.fParity         = have_parity;
+  dcbSerialParams.fParity         = params->have_parity;
   dcbSerialParams.fOutxCtsFlow    = FALSE;
   dcbSerialParams.fOutxDsrFlow    = FALSE;
-  dcbSerialParams.fDtrControl     = DTR_CONTROL_DISABLE;
+  dcbSerialParams.fDtrControl     =
+    params->dtr ? DTR_CONTROL_ENABLE : DTR_CONTROL_DISABLE;
   dcbSerialParams.fDsrSensitivity = FALSE;
   dcbSerialParams.fOutX           = FALSE;
   dcbSerialParams.fInX            = FALSE;
   dcbSerialParams.fErrorChar      = TRUE;
   dcbSerialParams.fNull		  = FALSE;
-  dcbSerialParams.fRtsControl     = RTS_CONTROL_DISABLE;
+  dcbSerialParams.fRtsControl     =
+    params->rts ? RTS_CONTROL_ENABLE : RTS_CONTROL_DISABLE;
   dcbSerialParams.fAbortOnError   = FALSE;
   dcbSerialParams.ByteSize        = 8;
   dcbSerialParams.Parity          = have_parity ? EVENPARITY : NOPARITY;
@@ -99,29 +92,29 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
 
 static speed_t termios_convert_speed(uint32_t baudrate)
 {
-    speed_t speed;
+  speed_t speed;
 
-    /*
-     * Assume termios is sane if and only if all baud rate constants
-     * including B0 match their numeric values.
-     */
-    const bool termios_is_sane = true
+  /*
+   * Assume termios is sane if and only if all baud rate constants
+   * including B0 match their numeric values.
+   */
+  const bool termios_is_sane = true
 #define SPEED(b,n) && (b == n)
 #include "termios_speeds.h"
 #undef SPEED
-	;
+    ;
 
-    if (termios_is_sane) {
-	speed = baudrate;
-    } else {
-	switch (baudrate) {
+  if (termios_is_sane) {
+    speed = baudrate;
+  } else {
+    switch (baudrate) {
 #define SPEED(b,n) case n : speed = b; break;
 #include "termios_speeds.h"
 #undef SPEED
-	default : speed = BOTHER; break;
-	}
+    default : speed = BOTHER; break;
     }
-    return speed;
+  }
+  return speed;
 }
 
 #ifdef TCSETS2
@@ -135,7 +128,7 @@ static speed_t termios_convert_speed(uint32_t baudrate)
 #define termios termios2
 static int tcgetattr(int fd, struct termios *termios_p)
 {
-    return ioctl(fd, TCGETS2, termios_p);
+  return ioctl(fd, TCGETS2, termios_p);
 }
 #undef  TCSANOW
 #undef  TCSADRAIN
@@ -146,73 +139,66 @@ static int tcgetattr(int fd, struct termios *termios_p)
 static int tcsetattr(int fd, int optional_actions,
 		     const struct termios *termios_p)
 {
-    return ioctl(fd, optional_actions, termios_p);
+  return ioctl(fd, optional_actions, termios_p);
 }
 static int cfsetbaud(struct termios *termios_p, unsigned long baudrate)
 {
-    speed_t speed = termios_convert_speed(baudrate);
-    termios_p->c_ispeed = termios_p->c_ospeed = baudrate;
-    if (speed == B0)
-	speed = BOTHER;
-    termios_p->c_cflag &= CBAUD | CIBAUD;
-    termios_p->c_cflag |= speed | (speed << IBSHIFT);
-    return 0;
+  speed_t speed = termios_convert_speed(baudrate);
+  termios_p->c_ispeed = termios_p->c_ospeed = baudrate;
+  if (speed == B0)
+    speed = BOTHER;
+  termios_p->c_cflag &= CBAUD | CIBAUD;
+  termios_p->c_cflag |= speed | (speed << IBSHIFT);
+  return 0;
 }
 static int tcflush(int fd, int arg)
 {
-    return ioctl(fd, TCFLSH, arg);
+  return ioctl(fd, TCFLSH, arg);
 }
 #else
 static int cfsetbaud(struct termios *termios_p, unsigned long baudrate)
 {
-    speed_t speed = termios_convert_speed(baudrate);
-    return baudrate != B0 &&
-	cfsetispeed(termios_p, baudrate) &&
-	cfsetospeed(termios_p, baudrate);
+  speed_t speed = termios_convert_speed(baudrate);
+  return baudrate != B0 &&
+    cfsetispeed(termios_p, baudrate) &&
+    cfsetospeed(termios_p, baudrate);
 }
 #endif
 
 #ifdef TIOCMSET
 static int set_modem_bits(int fd, bool dtr, bool rts)
 {
-    const int modem_bits =
-	(dtr ? TIOCM_DTR : 0) |
-	(rts ? TIOCM_RTS : 0);
-    return ioctl(fd, TIOCMSET, &modem_bits);
+  const int modem_bits =
+    (dtr ? TIOCM_DTR : 0) |
+    (rts ? TIOCM_RTS : 0);
+  return ioctl(fd, TIOCMSET, &modem_bits);
 }
 #else
 static int set_modem_bits(int fd, bool dtr, bool rts)
 {
-    (void)fd;
-    (void)dtr;
-    (void)rts;
-    errno = ENOSYS;
-    return -1;			/* Don't know how to set modem flags */
+  (void)fd;
+  (void)dtr;
+  (void)rts;
+  errno = ENOSYS;
+  return -1;			/* Don't know how to set modem flags */
 }
 #endif
 
-/** \brief Open COM port with settings
+/** \brief Configure a serial port
  *
- * \param [in] port Port name as string
- * \param [in] baudrate Port baudrate
- * \param [in] have_parity true if parity should be switched on
- * \param [in] two_stopbits true if 2 stop bits used
+ * \param [in] param Desired serial port parameters
  * \return true if succeed
  *
  */
-bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits)
+bool COM_Config(const struct com_params *params)
 {
-  printf("Opening %s at %u baud\n", port, baudrate);
-  fd = open(port, O_RDWR | O_NOCTTY | O_CLOEXEC);
-  if (fd <0)
-    return false;
   struct termios SerialPortSettings;
   /* Get the current attributes of the Serial port */
   if (tcgetattr(fd, &SerialPortSettings))
-      return false;
+    return false;
   /* Setting the Baud rate */
-  if (cfsetbaud(&SerialPortSettings, baudrate))
-      return false;
+  if (cfsetbaud(&SerialPortSettings, params->baudrate))
+    return false;
 
   /*
    * Disable output processing
@@ -237,22 +223,53 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
    */
   SerialPortSettings.c_cflag &= ~(CSIZE | HUPCL | PARENB | CSTOPB | CRTSCTS);
   SerialPortSettings.c_cflag |= CREAD | CLOCAL | CS8;
-  if (have_parity)
+  if (params->have_parity)
     SerialPortSettings.c_cflag |= PARENB;   /* Enable parity */
-  if (two_stopbits)
+  if (params->two_stopbits)
     SerialPortSettings.c_cflag |= CSTOPB;   /* CSTOPB = 2 Stop bits */
 
   SerialPortSettings.c_cc[VMIN]  = 0;	// read doesn't block
   SerialPortSettings.c_cc[VTIME] = 1;	// 0.1 seconds read timeout
-  tcsetattr(fd, TCSANOW, &SerialPortSettings);  /* Set the attributes to the termios structure*/
-
-  tcflush(fd, TCIFLUSH);
-  set_modem_bits(fd, false, false);
+  tcsetattr(fd, TCSAFLUSH, &SerialPortSettings);  /* Set the attributes to the termios structure*/
+  set_modem_bits(fd, params->dtr, params->rts);
 
   return true;
 }
 
 #endif /* __unix__ */
+
+/** \brief Open COM port with settings
+ *
+ * \param [in] params Port name and settings
+ * \return true if succeed
+ *
+ */
+bool COM_Open(const struct com_params *params)
+{
+  printf("Opening %s at %u baud\n", params->port, params->baudrate);
+#ifdef _WIN32
+  size_t port_len = strlen(params->port);
+  char *str = malloc(port_len + 5);
+
+  if (!str)
+    return false;
+
+  /* Add \\.\ device name prefix */
+  memcpy(str, "\\\\.\\", 4);
+  memcpy(str+4, params->port, port_len+1);
+  hSerial = CreateFile(str, GENERIC_READ | GENERIC_WRITE, 0,
+		       NULL, OPEN_EXISTING, 0, NULL);
+  free(str);
+  if (hSerial == INVALID_HANDLE_VALUE)
+    return false;
+  fd = _open_osfhandle((intptr_t)hSerial, 0);
+#else
+  fd = open(params->port, O_RDWR | O_NOCTTY | O_CLOEXEC);
+#endif
+  if (fd < 0)
+    return false;
+  return COM_Config(params);
+}
 
 /** \brief Write data to COM port
  *
@@ -261,7 +278,7 @@ bool COM_Open(char *port, uint32_t baudrate, bool have_parity, bool two_stopbits
  * \return 0 if everything Ok
  *
  */
-int COM_Write(uint8_t *data, uint16_t len)
+int COM_Write(const uint8_t *data, uint16_t len)
 {
     return write(fd, data, len) >= 0;
 }
@@ -275,7 +292,7 @@ int COM_Write(uint8_t *data, uint16_t len)
  */
 int COM_Read(uint8_t *data, uint16_t len)
 {
-    return read(fd, data, len);
+  return read(fd, data, len);
 }
 
 /** \brief Calculate time for transmission with current baudrate
@@ -286,7 +303,7 @@ int COM_Read(uint8_t *data, uint16_t len)
  */
 uint16_t COM_GetTransTime(uint16_t len)
 {
-    return (uint16_t)(len * 1000 * 11 / COM_Baudrate + 1);
+  return (uint16_t)(len * 1000 * 11 / COM_Baudrate + 1);
 }
 
 /** \brief Close current COM port

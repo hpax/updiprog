@@ -78,13 +78,13 @@ void LINK_Start(void)
  * \return
  *
  */
-bool LINK_Init(char *port, uint32_t baudrate, bool onDTR)
+bool LINK_Init(const struct com_params *com)
 {
   uint8_t err = 3;
   uint8_t byte;
 
   //Create a UPDI physical connection
-  if (PHY_Init(port, baudrate, onDTR) == false)
+  if (PHY_Init(com) == false)
     return false;
   byte = UPDI_BREAK;
   PHY_Send(&byte, sizeof(uint8_t));
@@ -95,13 +95,11 @@ bool LINK_Init(char *port, uint32_t baudrate, bool onDTR)
     if (LINK_Check() == true)
       return true;
     //Send double break if all is not well, and re-check
-    if (PHY_DoBreak(port) == false)
+    if (PHY_DoBreak(com) == false)
     {
       LOG_Print(LOG_LEVEL_ERROR, "UPDI initialisation failed");
       return false;
     }
-    if (PHY_Init(port, baudrate, onDTR) == false)
-      return false;
   }
   return false;
 }

@@ -4,9 +4,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+struct com_params;
+
 uint8_t LINK_ldcs(uint8_t address);
 void LINK_stcs(uint8_t address, uint8_t value);
-bool LINK_Init(char *port, uint32_t baudrate, bool onDTR);
+bool LINK_Init(const struct com_params *com);
 bool LINK_SendKey(char *key, uint8_t size);
 uint8_t LINK_ld(uint16_t address);
 bool LINK_st(uint16_t address, uint8_t value);
